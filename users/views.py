@@ -6,6 +6,8 @@ from .serializers import UserSerializer
 from rest_framework.exceptions import AuthenticationFailed
 from .permissions import IsAdmin, IsCliente
 from .models import User
+from django.conf import settings
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
 # class RegisterView(generics.CreateAPIView):
 #     serializer_class = UserSerializer
@@ -36,11 +38,16 @@ class RegisterView(APIView):
 
 class LoginView(APIView):
     def post(self, request):
+
+        # para tomar al usuario segun el email
         email = request.data['email']
+        # Tomar datos de la request para validarlos
         password = request.data['password']
+
 
         user = User.objects.filter(email=email).first()
 
+        # Validacion de datos
         if user is None:
             raise AuthenticationFailed('User not Found!')
 
@@ -51,10 +58,30 @@ class LoginView(APIView):
         print(user)
 
         # El token se guarda en una cookies
-        return Response({
-            'jwt-token': str(token)
+        response = Response()
+        response.set_cookie(key='jwt', value=token, httponly=True)
+        response.data = {
+            'jwt': str(token)
+        }
+
+        return response
+
+
+class AdminView(APIView):
+    def get(self, request):
+        JWT_authenticator = JWTAuthentication() 
+        token = request.COOKIES.get('jwt')
+        response_token = JWT_authenticator.authenticate(token)
+
+        print(response_token)
+
+        if not token:
+            raise AuthenticationFailed('Unauthenticated!')
+
+        return Response({ 
+             "Message": "Acces"
         })
-    
+
 
 
 # class UserListView(generics.ListAPIView):
