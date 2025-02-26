@@ -1,13 +1,10 @@
-from rest_framework import generics, permissions
+from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.tokens import RefreshToken
 from .serializers import UserSerializer
 from rest_framework.exceptions import AuthenticationFailed
-from .permissions import IsAdmin, IsCliente
 from .models import User
-from django.conf import settings
-from rest_framework_simplejwt.authentication import JWTAuthentication
+import jwt, datetime
 
 # class RegisterView(generics.CreateAPIView):
 #     serializer_class = UserSerializer
@@ -24,17 +21,16 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 #         })
 
 class RegisterView(APIView):
+
+    serializer_class = UserSerializer
+    permission_classes = [permissions.AllowAny]
+
     def post(self, request):
         serializer = UserSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        serializer.save()
 
-        token = RefreshToken.for_user(user)
-        print(token)
-
-        return Response({
-            'jwt': str(token)
-        })
+        return Response(serializer.data)
 
 class LoginView(APIView):
     def post(self, request):
@@ -43,7 +39,6 @@ class LoginView(APIView):
         email = request.data['email']
         # Tomar datos de la request para validarlos
         password = request.data['password']
-
 
         user = User.objects.filter(email=email).first()
 
@@ -54,52 +49,59 @@ class LoginView(APIView):
         if not user.check_password(password):
             raise AuthenticationFailed('Incorrect Password!')
         
-        token = RefreshToken.for_user(user)
-        print(user)
+        payload = {
+            'id': user.id,
+            'exp': datetime.datetime.now() + datetime.timedelta(hours=60),
+            'iat': datetime.datetime.now()
+        }
 
-        # El token se guarda en una cookies
+        token = jwt.encode(payload, 'secret', algorithm='HS256')
+        
         response = Response()
+
         response.set_cookie(key='jwt', value=token, httponly=True)
+
         response.data = {
-            'jwt': str(token)
+            'jwt': token
         }
 
         return response
 
 
-class AdminView(APIView):
+class AllUserView(APIView):
     def get(self, request):
-        JWT_authenticator = JWTAuthentication() 
-        token = request.COOKIES.get('jwt')
-        response_token = JWT_authenticator.authenticate(request)
 
-        print(response_token)
+        authenticate_user(request, role='ADMIN')
 
-        if not token:
-            raise AuthenticationFailed('Unauthenticated!')
-
-        return Response({ 
-             "Message": "Acces"
-        })
+        users = User.objects.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data)
 
 
+class AdminView(APIView):
+  def get(self, request):
+    users = User.objects.all()
+    serializer = UserSerializer(users, many=True)
+    return Response(serializer.data)
 
-# class UserListView(generics.ListAPIView):
-#     queryset = User.objects.all()
-#     serializer_class = UserSerializer
-#     permission_classes = [IsAdmin]
 
-# class EditorView(generics.RetrieveUpdateAPIView):
-#     queryset = User.objects.filter(role='CLIENTE')
-#     serializer_class = UserSerializer
-#     permission_classes = [IsCliente]
 
-# class AdminView(APIView):
-#     # permission_classes = [permissions.AllowAny]
-#     def get(self, request):
+# Funcion para autenticar
+def authenticate_user(request, role):
+    token = request.COOKIES.get('jwt')
 
-#         user = User.objects.filter(id=payload['id']).first()
+    if not token:
+        raise AuthenticationFailed('Unauthenticated!')
+    
+    try:
+        payload = jwt.decode(token, 'secret', algorithms=['HS256'])
+    except jwt.ExpiredSignatureError:
+        raise AuthenticationFailed('Unauthenticated')
+    
+    user = User.objects.filter(id=payload['id']).first()
 
-#         return Response({
-#             "message": "Hello World"
-#         })
+    if not user:
+        raise AuthenticationFailed('User not found!')
+    
+    if user.role != role:
+        raise AuthenticationFailed('Permission denied!')
