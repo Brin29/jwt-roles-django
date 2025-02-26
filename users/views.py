@@ -71,7 +71,7 @@ class AdminView(APIView):
     def get(self, request):
         JWT_authenticator = JWTAuthentication() 
         token = request.COOKIES.get('jwt')
-        response_token = JWT_authenticator.authenticate(token)
+        response_token = JWT_authenticator.authenticate(request)
 
         print(response_token)
 
