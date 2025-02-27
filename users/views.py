@@ -2,23 +2,13 @@ from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .serializers import UserSerializer
+from django.template.loader import get_template
+from django.conf import settings
+from rest_framework.response import Response
+from django.core.mail import EmailMultiAlternatives
 from rest_framework.exceptions import AuthenticationFailed
 from .models import User
 import jwt, datetime
-
-# class RegisterView(generics.CreateAPIView):
-#     serializer_class = UserSerializer
-#     permission_classes = [permissions.AllowAny]
-
-#     def post(self, request, *args, **kwargs):
-#         serializer = self.get_serializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-#         user = serializer.save()
-#         refresh = RefreshToken.for_user(user)
-#         return Response({
-#             'refresh': str(refresh),
-#             'access': str(refresh.access_token),
-#         })
 
 class RegisterView(APIView):
 
@@ -84,7 +74,27 @@ class AdminView(APIView):
     serializer = UserSerializer(users, many=True)
     return Response(serializer.data)
 
+class SendEmail(APIView):
+    def post(self, request):
 
+        # user = authenticate_user(request, role='ADMIN')
+        # serializer = UserSerializer(data=request.data)
+        # serializer.is_valid(raise_exception=True)
+        # serializer.save()
+
+        mail = create_email(
+            'breinerstevendev@gmail.com',
+            'Enlace de ingreso',
+            'autorizacion.html',
+            {
+                'username': 'Breiner'
+            }
+        )
+
+        mail.send(fail_silently=False)
+        return Response({
+            'message': 'Work'
+        })
 
 # Funcion para autenticar
 def authenticate_user(request, role):
@@ -105,3 +115,24 @@ def authenticate_user(request, role):
     
     if user.role != role:
         raise AuthenticationFailed('Permission denied!')
+    
+    return user
+    
+
+# Funcion para enviar un email
+def create_email(user_email, subject, template_name, context):
+    template = get_template(template_name)
+    content = template.render(context)
+
+    message = EmailMultiAlternatives(
+        subject=subject,
+        body='',
+        from_email=settings.EMAIL_HOST_USER,
+        to=[
+            user_email
+        ],
+        cc=[]
+    )
+
+    message.attach_alternative(content, 'text/html')
+    return message
