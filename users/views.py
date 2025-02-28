@@ -7,8 +7,12 @@ from django.conf import settings
 from rest_framework.response import Response
 from django.core.mail import EmailMultiAlternatives
 from rest_framework.exceptions import AuthenticationFailed
+from datetime import timedelta
+from django.utils import timezone
 from .models import User
 import jwt, datetime
+import secrets
+import string
 
 class RegisterView(APIView):
 
@@ -39,6 +43,18 @@ class LoginView(APIView):
         if not user.check_password(password):
             raise AuthenticationFailed('Incorrect Password!')
         
+        if user.is_temp_password:
+            expiration_date = user.temp_password_date + timedelta(minutes=3)
+
+            if timezone.now() > expiration_date:
+                user.is_active = False
+                user.save()
+                raise AuthenticationFailed('Tu contraseña temporal ha expirado. Contacta al administrador.')
+
+            return Response({
+                'message': 'Debes cambiar tu contraseña temporal.'
+            })
+
         payload = {
             'id': user.id,
             'exp': datetime.datetime.now() + datetime.timedelta(hours=60),
@@ -78,20 +94,42 @@ class SendEmail(APIView):
     def post(self, request):
 
         # user = authenticate_user(request, role='ADMIN')
-        # serializer = UserSerializer(data=request.data)
-        # serializer.is_valid(raise_exception=True)
-        # serializer.save()
+        
+        # Generar contraseña temporal
+        temp_password = generate_temp_password()
+        request.data['password'] =  temp_password
 
+        # Enviar data a la base de datos
+        serializer = UserSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+
+        # Actualizar contraseña temporal
+        user.set_password(temp_password)
+        user.is_temp_password = True
+        user.temp_password_date = timezone.now()
+        user.save()
+
+        # tomar datos de la request
+        email = request.data['email']
+        username = request.data['username']
+        role = request.data['role']
+
+        # datos de respuesta al correo
         mail = create_email(
-            'breinerstevendev@gmail.com',
+            email,
             'Enlace de ingreso',
             'autorizacion.html',
             {
-                'username': 'Breiner'
+                'username': username,
+                'email': email,
+                'password': temp_password,
+                'role': role,
             }
         )
 
         mail.send(fail_silently=False)
+
         return Response({
             'message': 'Work'
         })
@@ -136,3 +174,7 @@ def create_email(user_email, subject, template_name, context):
 
     message.attach_alternative(content, 'text/html')
     return message
+
+def generate_temp_password():
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*()"
+    return ''.join(secrets.choice(alphabet) for _ in range(12))
