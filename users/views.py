@@ -6,6 +6,7 @@ from django.template.loader import get_template
 from django.conf import settings
 from rest_framework.response import Response
 from django.core.mail import EmailMultiAlternatives
+from django.contrib.auth import update_session_auth_hash
 from rest_framework.exceptions import AuthenticationFailed
 from datetime import timedelta
 from django.utils import timezone
@@ -133,6 +134,38 @@ class SendEmail(APIView):
         return Response({
             'message': 'Work'
         })
+
+class ChangePasswordView(APIView):
+    def post(self, request):
+        token = request.COOKIES.get('jwt')
+
+        if not token:
+            raise AuthenticationFailed('Unauthenticated!')
+        
+        try:
+            payload = jwt.decode(token, 'secret', algorithms=['HS256'])
+        except jwt.ExpiredSignatureError:
+            raise AuthenticationFailed('Unauthenticated')
+        
+        user = User.objects.filter(id=payload['id']).first()
+
+        if not user:
+            raise AuthenticationFailed('User not found!')
+        
+        new_password = request.data.get('new_password')
+        if not new_password:
+            return Response({
+                'message': 'Nueva contraseña no proporcionada'
+            }, status=400)
+        
+        user.set_password(new_password)
+        user.is_temp_password = False
+
+        user.save()
+        update_session_auth_hash(request, user)
+
+        return Response({'message': 'Contraseña cambiada exitosamente'})
+
 
 # Funcion para autenticar
 def authenticate_user(request, role):
